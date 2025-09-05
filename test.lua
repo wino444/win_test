@@ -16,7 +16,6 @@ end
 
 -- ---------------------------
 -- ป้องกันการรันซ้ำ (Duplicate-run guard)
--- - เช็คว่า GUI มีอยู่แล้วหรือมี flag global ถูกตั้งไว้
 -- ---------------------------
 if PlayerGui:FindFirstChild("PhantomChatHub") then
     warn("PhantomChatHub: UI already exists in PlayerGui — aborting duplicate execution.")
@@ -26,7 +25,6 @@ if (getgenv and getgenv().PhantomChatHubLoaded) or _G.PhantomChatHubLoaded then
     warn("PhantomChatHub: already running (global flag) — aborting duplicate execution.")
     return
 end
--- ตั้ง flag เพื่อป้องกันการรันซ้ำในอนาคต
 if getgenv then getgenv().PhantomChatHubLoaded = true end
 _G.PhantomChatHubLoaded = true
 
@@ -41,27 +39,18 @@ local chatOutputFrame = nil
 local chatList = nil
 local toggleButtonGui = nil
 local urlGui = nil
-
--- ป้องกันล็อกอินซ้ำ: อย่าส่ง JSON {name,userId} มากกว่าหนึ่งครั้ง
-local hasSentAuth = false
+local hasSentAuth = false -- ส่งชื่อ+ID แค่ครั้งเดียว
 
 -- ─── ฟังก์ชัน log ────────────────────── 📜
 local function log(txt)
-    print(txt) -- เก็บ log ปกติ (ไม่ขึ้น UI แชท)
+    print(txt) -- ไม่โชว์ใน UI
 end
 
--- ─── สร้าง UI แชท ────────────────────── 🖼️
+-- ─── สร้าง UI ────────────────────────── 🖼️
 local function createChatUI()
-    -- ถ้ามีแล้ว ให้คืนค่า GUI เดิม (ไม่สร้างซ้ำ)
-    if chatGui and chatGui.Parent then
-        return chatGui
-    end
-    -- ถ้า PlayerGui มีชื่อเดียวกันอยู่ (กันซ้ำอีกชั้น)
+    if chatGui and chatGui.Parent then return chatGui end
     local existing = PlayerGui:FindFirstChild("PhantomChatHub")
-    if existing then
-        chatGui = existing
-        return chatGui
-    end
+    if existing then chatGui = existing return chatGui end
 
     chatGui = Instance.new("ScreenGui")
     chatGui.Name = "PhantomChatHub"
@@ -73,7 +62,6 @@ local function createChatUI()
     chatFrame.Size            = UDim2.new(0.6, 0, 0.7, 0)
     chatFrame.Position        = UDim2.new(0.2, 0, 0.15, 0)
     chatFrame.BackgroundColor3= Color3.fromRGB(20, 20, 20)
-    chatFrame.BorderSizePixel = 1
     chatFrame.Active          = true
     chatFrame.Draggable       = true
 
@@ -85,7 +73,6 @@ local function createChatUI()
     title.Font              = Enum.Font.SourceSansBold
     title.TextSize          = 24
 
-    -- Scrollable frame สำหรับ chat เฉพาะข้อความ chat
     chatOutputFrame = Instance.new("ScrollingFrame", chatFrame)
     chatOutputFrame.Name = "ChatScroll"
     chatOutputFrame.Size             = UDim2.new(1, -20, 0.65, -10)
@@ -95,7 +82,6 @@ local function createChatUI()
     chatOutputFrame.CanvasSize       = UDim2.new(0, 0, 0, 0)
     chatOutputFrame.ScrollBarThickness = 8
     chatOutputFrame.BackgroundTransparency = 0.1
-    -- AutomaticCanvasSize อาจไม่มีในบางเวอร์ชัน executor แต่ใส่ไว้ถ้ามี
     pcall(function() chatOutputFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y end)
 
     chatList = Instance.new("UIListLayout", chatOutputFrame)
@@ -134,11 +120,8 @@ local function createChatUI()
         chatInput.Text = ""
     end)
 
-    -- ปุ่มเปิด/ปิด UI
-    -- ป้องกันสร้างปุ่ม toggle ซ้ำ
-    if toggleButtonGui and toggleButtonGui.Parent then
-        -- already created toggle button gui elsewhere
-    else
+    -- ปุ่ม toggle UI
+    if not toggleButtonGui or not toggleButtonGui.Parent then
         toggleButtonGui = Instance.new("ScreenGui")
         toggleButtonGui.Name = "ToggleChatButton"
         toggleButtonGui.ResetOnSpawn = false
@@ -154,8 +137,7 @@ local function createChatUI()
         toggleButton.TextSize = 20
         toggleButton.BorderSizePixel = 0
 
-        local corner = Instance.new("UICorner", toggleButton)
-        corner.CornerRadius = UDim.new(0, 10)
+        Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0, 10)
 
         toggleButton.MouseButton1Click:Connect(function()
             chatGui.Enabled = not chatGui.Enabled
@@ -166,7 +148,7 @@ local function createChatUI()
     return chatGui
 end
 
--- ─── ฟังก์ชันเพิ่มข้อความ chat เฉพาะจาก server 💬
+-- ─── ฟังก์ชันเพิ่มข้อความ chat ───────── 💬
 local function addChatMessage(text)
     if not chatOutputFrame then return end
     local msgLabel = Instance.new("TextLabel")
@@ -179,10 +161,8 @@ local function addChatMessage(text)
     msgLabel.TextXAlignment   = Enum.TextXAlignment.Left
     msgLabel.TextYAlignment   = Enum.TextYAlignment.Top
     msgLabel.Text             = tostring(text)
-    -- LayoutOrder ให้ระบบ UIListLayout จัดเรียง
     msgLabel.Parent           = chatOutputFrame
 
-    -- อัปเดต CanvasSize/Scroll ให้เลื่อนไปข้างล่าง
     local success, contentY = pcall(function() return chatList.AbsoluteContentSize.Y end)
     if success and contentY then
         pcall(function()
@@ -192,43 +172,46 @@ local function addChatMessage(text)
     end
 end
 
--- ─── ฟังก์ชัน handle message ─────────── 📩
+-- ─── handleMessage ────────────────────── 📩
 local function handleMessage(msg)
     if not msg then return end
 
-    -- ส่งชื่อ+ID ครั้งเดียวหลัง server บอกว่า "พร้อม"
+    -- ส่ง Auth หลัง "พร้อม"
     if not hasSentAuth and msg:find("✅ คุณเชื่อมต่อเซิร์ฟเวอร์สำเร็จ!") then
         local auth = {name=LocalPlayer.Name, userId=LocalPlayer.UserId}
         local ok, err = pcall(function() connection:Send(HttpService:JSONEncode(auth)) end)
         if ok then
             hasSentAuth = true
-            log("📤 ส่งชื่อ+ID ไปยังเซิร์ฟเวอร์ (ครั้งแรก)")
+            log("📤 ส่งชื่อ+ID ไปยังเซิร์ฟเวอร์")
         else
             log("❌ ส่งชื่อ+ID ไม่สำเร็จ: " .. tostring(err))
         end
         return
     end
 
-    -- server ยืนยันการตั้งชื่อ
+    -- Auth สำเร็จ
     if not isAuthenticated and msg:find("🔑 ตั้งชื่อสำเร็จ") then
         isAuthenticated = true
         if chatGui then chatGui.Enabled = true end
-        addChatMessage(msg)
-        log("✅ Authenticated จาก server")
+        log(msg) -- แค่ log ไม่โชว์ใน chat UI
         return
     end
 
-    -- ตรวจสอบ JSON ที่ server ส่ง
+    -- JSON จาก server
     local success, data = pcall(HttpService.JSONDecode, HttpService, msg)
     if success and type(data) == "table" then
         if data.chat then
-            -- เพิ่มเฉพาะ chat ลง UI
-            addChatMessage("🗨️ " .. tostring(data.chat))
+            -- ✅ โชว์เฉพาะข้อความที่มีรูปแบบ "ชื่อ:ข้อความ"
+            if tostring(data.chat):match("^.+:%s.+") then
+                addChatMessage("🗨️ " .. tostring(data.chat))
+            else
+                log("ℹ️ System: " .. tostring(data.chat))
+            end
         elseif data.error then
             log("❌ " .. tostring(data.error))
         elseif data.command and data.target == LocalPlayer.Name then
             if data.command == "kick" then
-                log("🦵 คุณถูก kick! ตัดการเชื่อมต่อ...")
+                log("🦵 คุณถูก kick!")
                 LocalPlayer:Kick("คุณถูก kick โดย Phantom Hub")
             elseif data.command == "kill" then
                 log("💀 คุณถูก kill!")
@@ -240,20 +223,15 @@ local function handleMessage(msg)
             end
         end
     else
-        -- ข้อความทั่วไปจาก server หรือ log → ไม่ขึ้น UI chat
         log("📄 " .. tostring(msg))
     end
 end
 
--- ─── ฟังก์ชัน UI ใส่ URL ─────────── 🌐
+-- ─── ฟังก์ชัน URL Gui ───────────────── 🌐
 local function showURLGui()
     if urlGui and urlGui.Parent then return end
-    -- ถ้า PlayerGui มี PhantomURLInput อยู่แล้ว ก็ไม่สร้างซ้ำ
     local existing = PlayerGui:FindFirstChild("PhantomURLInput")
-    if existing then
-        urlGui = existing
-        return
-    end
+    if existing then urlGui = existing return end
 
     urlGui = Instance.new("ScreenGui")
     urlGui.Name = "PhantomURLInput"
@@ -269,7 +247,6 @@ local function showURLGui()
 
     local label = Instance.new("TextLabel", frame)
     label.Size  = UDim2.new(1, 0, 0.2, 0)
-    label.Position = UDim2.new(0, 0, 0, 0)
     label.Text = "🌐 ใส่ WebSocket URL"
     label.TextColor3 = Color3.fromRGB(0, 255, 0)
     label.BackgroundTransparency = 1
@@ -307,16 +284,13 @@ local function showURLGui()
     end)
 end
 
--- ─── ฟังก์ชัน connect ─────────── 🔌
+-- ─── connect ─────────────────────────── 🔌
 createChatUI()
-
 function connectToHub(url)
-    -- ป้องกันเรียก connect ซ้ำ ขณะเชื่อมต่ออยู่
     if connection and connected then
-        log("🔌 Already connected — skipping duplicate connectToHub call.")
+        log("🔌 Already connected")
         return
     end
-
     if connectCooldown then return end
     connectCooldown = true
     task.delay(2, function() connectCooldown = false end)
@@ -331,9 +305,7 @@ function connectToHub(url)
     connection, connected = sock, true
 
     if connection.OnMessage then
-        connection.OnMessage:Connect(function(raw)
-            pcall(handleMessage, raw)
-        end)
+        connection.OnMessage:Connect(function(raw) pcall(handleMessage, raw) end)
     else
         task.spawn(function()
             while connected do
@@ -350,16 +322,15 @@ function connectToHub(url)
             connected = false
         end)
     end
-
     if connection.OnError then
         connection.OnError:Connect(function(err)
-            log("⚠️ เกิดข้อผิดพลาด: " .. tostring(err))
+            log("⚠️ Error: " .. tostring(err))
             connected = false
         end)
     end
 end
 
--- ─── เริ่มต้น ─────────── 🚀
+-- ─── เริ่ม ───────────────────────────── 🚀
 if USE_DEFAULT_URL then
     connectToHub(DEFAULT_URL)
 else
