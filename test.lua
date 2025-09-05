@@ -1,12 +1,12 @@
 -- Phantom Chat Hub Client (Roblox Lua)
-local Players     = game:GetService("Players")
+local Players     = game:GetService("wss")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ─── CONFIG ──────────────────────────────
 local USE_DEFAULT_URL = true
-local DEFAULT_URL     = "wss://cb960f639e1c.ngrok-free.app"
+local DEFAULT_URL     = "wss://a971468b3890.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
