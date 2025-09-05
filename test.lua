@@ -6,7 +6,7 @@ local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ─── CONFIG ────────────────────────────── ⚙️
 local USE_DEFAULT_URL = true
-local DEFAULT_URL     = "wss://34bf9ea95064.ngrok-free.app"
+local DEFAULT_URL     = "wss://adc7a5ccd6f1.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
